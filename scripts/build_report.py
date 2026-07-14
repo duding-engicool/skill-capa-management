@@ -1,44 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CAPA / 8D 纠正预防措施报告生成器
-读入结构化结果 JSON，生成 MD 文档 + 精美网页版 HTML（主色 #C8102E）。
+CAPA 纠正措施报告生成器（成熟度定制版）
+读入结构化结果 JSON，生成 六段式 纠正措施报告（txt + md 双件）。
+产物默认写入当前工作目录（或 --out-dir 指定目录）。
 
 用法：
-  python build_report.py --input result.json --md-out report.md --html-out report.html
-  python build_report.py --input result.json --html-out report.html      # 仅 HTML
-  python build_report.py --demo --md-out report.md --html-out report.html # 用内置小样本跑通
+  python build_report.py --input result.json --out-dir ./输出
+  python build_report.py --demo --out-dir ./输出        # 内置小样本跑通
+  python build_report.py --input result.json --format txt   # 仅 txt
 
 输入 JSON 结构（字段缺失以「待企业补充」占位）：
 {
   "capa_id": "CAPA-2026-001",
-  "title": "XX 产品外观不良率超标",
-  "source": "客诉",
-  "level": "一般",
-  "team": [{"role":"组长","name":"品质部-张工"}],
-  "problem": "5W2H 描述",
-  "containment": [{"action":"隔离问题批次","owner":"生产部-李工","due":"2026-01-20"}],
-  "root_cause": {"method":"5Why","content":"设备 X 校准偏移…","verified":false},
-  "corrective_actions": [{"action":"恢复设备精度","owner":"设备部-王工","due":"2026-02-01","verify":"连续30天 SPC 合格"}],
-  "preventive_actions": [{"action":"更新 PM 计划","spread":"同类设备5台","owner":"设备部","due":"2026-02-15"}],
-  "verification": [{"node":"30天","date":"2026-03-01","method":"SPC 监控","result":"不良率降至0.1%"}],
-  "closure": {"checklist":[True,True,True,True,True,True,True],"approver":"品保经理-杜鼎","close_date":"2026-04-01"},
-  "status": "已关闭"
+  "title": "XX 产品运输划伤",
+  "clause": "ISO9001:2015 8.7 / 10.2",
+  "maturity_level": "B类（基础规范型）",
+  "nonconformity": "不符合项事实描述",
+  "correction": "已执行纠正措施（应急止损）",
+  "root_cause": "根本原因分析（5Why）",
+  "doc_materials": "审核书面合规材料",
+  "field_actions": "现场轻量化落地动作",
+  "verification": "效果验证方案",
+  "prevention": "防反弹固化要求"
 }
 """
 
 import argparse
 import json
+import os
 import sys
-import html
 from datetime import datetime
-
-
-PRIMARY = "#C8102E"  # 主色
-
-
-def esc(s):
-    return html.escape(str(s), quote=True)
 
 
 def load_result(path):
@@ -52,250 +44,136 @@ def fmt(v, placeholder="待企业补充"):
         return placeholder
     if isinstance(v, str) and v.strip() == "":
         return placeholder
-    return v
-
-
-def list_pairs(items, keys):
-    out = []
-    if not items:
-        return ["• " + "（待企业补充）"]
-    for it in items:
-        if isinstance(it, dict):
-            parts = []
-            for k in keys:
-                val = fmt(it.get(k))
-                parts.append(str(val))
-            out.append("• " + " ｜ ".join(parts))
-        else:
-            out.append("• " + str(it))
-    return out
+    return str(v)
 
 
 # ----------------------------- MD -----------------------------
 def build_md(r):
     L = []
-    L.append(f"# CAPA 纠正预防措施报告\n")
-    L.append(f"> 编号：**{esc(fmt(r.get('capa_id')))}** ｜ 状态：{esc(fmt(r.get('status')))} ｜ 生成：{datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    L.append("# CAPA 纠正措施报告\n")
+    L.append(f"> 编号：**{fmt(r.get('capa_id'))}** ｜ 成熟度：**{fmt(r.get('maturity_level'))}** ｜ 生成：{datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    L.append(f"> 适用条款：{fmt(r.get('clause'))}\n")
+    L.append(f"**问题概要：** {fmt(r.get('title'))}\n")
 
-    L.append("## 一、基础信息\n")
-    L.append(f"- 标题：{fmt(r.get('title'))}")
-    L.append(f"- 来源：{fmt(r.get('source'))}")
-    L.append(f"- 问题等级：{fmt(r.get('level'))}")
-    team = r.get("team") or []
-    if team:
-        L.append("- 团队：" + "；".join(f"{fmt(t.get('role'))}:{fmt(t.get('name'))}" for t in team))
-    else:
-        L.append("- 团队：（待企业补充）")
+    L.append("## 一、不符合项事实描述\n")
+    L.append(fmt(r.get("nonconformity")))
     L.append("")
 
-    L.append("## 二、D2 问题描述（5W2H）\n")
-    L.append(fmt(r.get("problem")))
+    L.append("## 二、已执行纠正措施（应急止损）\n")
+    L.append(fmt(r.get("correction")))
     L.append("")
 
-    L.append("## 三、D3 临时措施（遏制）\n")
-    L.extend(list_pairs(r.get("containment"), ["action", "owner", "due"]))
+    L.append("## 三、根本原因分析（5Why）\n")
+    L.append(fmt(r.get("root_cause")))
     L.append("")
 
-    L.append("## 四、D4 根因分析\n")
-    rc = r.get("root_cause") or {}
-    L.append(f"- 方法：{fmt(rc.get('method'))}")
-    L.append(f"- 内容：\n{fmt(rc.get('content'))}")
-    L.append(f"- 已验证：{'是' if rc.get('verified') else '否（待验证）'}")
+    L.append("## 四、分轨纠正措施\n")
+    L.append("### 4.1 审核书面合规材料\n")
+    L.append(fmt(r.get("doc_materials")))
+    L.append("")
+    L.append("### 4.2 现场轻量化落地动作\n")
+    L.append(fmt(r.get("field_actions")))
     L.append("")
 
-    L.append("## 五、D5/D6 纠正措施（永久）\n")
-    L.extend(list_pairs(r.get("corrective_actions"), ["action", "owner", "due", "verify"]))
+    L.append("## 五、效果验证方案\n")
+    L.append(fmt(r.get("verification")))
     L.append("")
 
-    L.append("## 六、D7 预防措施（横向展开）\n")
-    L.extend(list_pairs(r.get("preventive_actions"), ["action", "spread", "owner", "due"]))
+    L.append("## 六、防反弹固化要求\n")
+    L.append(fmt(r.get("prevention")))
     L.append("")
 
-    L.append("## 七、效果验证（30/60/90 天）\n")
-    L.extend(list_pairs(r.get("verification"), ["node", "date", "method", "result"]))
-    L.append("")
-
-    L.append("## 八、D8 关闭检查清单\n")
-    items = ["根因已明确且经验证", "纠正措施已实施且有效", "预防措施已实施且有效",
-             "效果验证通过（≥90天）", "相关文件已更新(FMEA/CP/SOP)", "相关人员已完成培训", "经验教训已沉淀"]
-    cl = (r.get("closure") or {}).get("checklist") or [False] * len(items)
-    for i, it in enumerate(items):
-        ok = cl[i] if i < len(cl) else False
-        L.append(f"- [{'x' if ok else ' '}] {it}")
-    cl_info = r.get("closure") or {}
-    L.append(f"\n- 审批人：{fmt(cl_info.get('approver'))}")
-    L.append(f"- 关闭日期：{fmt(cl_info.get('close_date'))}")
-    L.append("")
-
-    L.append("> 本报告由 CAPA纠正预防措施管理技能生成，具体内容以企业实际评审结论为准。")
+    L.append("> 本报告由 CAPA纠正预防措施技能（成熟度定制）生成，具体内容以企业实际评审结论为准。")
     return "\n".join(L)
 
 
-# ----------------------------- HTML -----------------------------
-CSS = f"""
-:root{{--primary:{PRIMARY};--bg:#f7f8fa;--card:#fff;--ink:#1f2933;--muted:#6b7280;}}
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-  background:var(--bg);color:var(--ink);line-height:1.7;padding:32px}}
-.wrap{{max-width:1040px;margin:0 auto}}
-header{{background:linear-gradient(135deg,var(--primary),#9c0c24);color:#fff;border-radius:16px;
-  padding:30px 34px;margin-bottom:28px;box-shadow:0 8px 24px rgba(200,16,46,.25)}}
-header h1{{font-size:27px;letter-spacing:1px}}
-header .meta{{margin-top:12px;font-size:14px;opacity:.95}}
-.badge{{display:inline-block;background:rgba(255,255,255,.2);border-radius:6px;padding:3px 10px;margin-right:8px;font-size:13px}}
-.sec{{background:var(--card);border-radius:14px;padding:24px 26px;box-shadow:0 4px 16px rgba(0,0,0,.06);margin-bottom:22px}}
-.sec h2{{font-size:20px;margin-bottom:14px;border-left:5px solid var(--primary);padding-left:12px}}
-.sec p{{white-space:pre-wrap;margin:0 0 6px}}
-ul{{list-style:none;padding-left:0}}
-ul li{{padding:7px 0;border-bottom:1px dashed #eee;font-size:15px}}
-.timeline{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}}
-.tnode{{background:#fdeef0;border-radius:10px;padding:14px;border-top:4px solid var(--primary)}}
-.tnode b{{color:var(--primary)}}
-.check{{font-size:15px;padding:6px 0}}
-.check .on{{color:#16a34a;font-weight:700}}
-.check .off{{color:var(--muted)}}
-footer{{text-align:center;color:var(--muted);font-size:12px;margin-top:18px}}
-@media(max-width:720px){{.timeline{{grid-template-columns:1fr}}}}
-"""
+# ----------------------------- TXT -----------------------------
+def build_txt(r):
+    L = []
+    L.append("CAPA 纠正措施报告")
+    L.append("=" * 60)
+    L.append(f"编号：{fmt(r.get('capa_id'))}")
+    L.append(f"成熟度：{fmt(r.get('maturity_level'))}")
+    L.append(f"适用条款：{fmt(r.get('clause'))}")
+    L.append(f"问题概要：{fmt(r.get('title'))}")
+    L.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    L.append("")
 
+    sections = [
+        ("一、不符合项事实描述", "nonconformity"),
+        ("二、已执行纠正措施（应急止损）", "correction"),
+        ("三、根本原因分析（5Why）", "root_cause"),
+        ("四、分轨纠正措施", None),
+        ("五、效果验证方案", "verification"),
+        ("六、防反弹固化要求", "prevention"),
+    ]
+    for title, key in sections:
+        L.append(title)
+        L.append("-" * 60)
+        if title.startswith("四"):
+            L.append("4.1 审核书面合规材料")
+            L.append(fmt(r.get("doc_materials")))
+            L.append("")
+            L.append("4.2 现场轻量化落地动作")
+            L.append(fmt(r.get("field_actions")))
+        else:
+            L.append(fmt(r.get(key)))
+        L.append("")
 
-def build_html(r):
-    team_html = "；".join(f"{esc(fmt(t.get('role')))}:{esc(fmt(t.get('name')))}" for t in (r.get("team") or [])) or "（待企业补充）"
-    rc = r.get("root_cause") or {}
-
-    def items_li(items, keys):
-        out = []
-        for it in (items or []):
-            if isinstance(it, dict):
-                vals = " ｜ ".join(esc(fmt(it.get(k))) for k in keys)
-                out.append(f"<li>{vals}</li>")
-            else:
-                out.append(f"<li>{esc(it)}</li>")
-        if not out:
-            out.append('<li style="color:#9ca3af">（待企业补充）</li>')
-        return "\n".join(out)
-
-    ver_html = "\n".join(
-        f'<div class="tnode"><b>{esc(fmt(v.get("node")))}</b><br>日期：{esc(fmt(v.get("date")))}'
-        f'<br>方式：{esc(fmt(v.get("method")))}<br>结果：{esc(fmt(v.get("result")))}</div>'
-        for v in (r.get("verification") or [])
-    ) or '<div class="tnode">（待企业补充）</div>'
-
-    items = ["根因已明确且经验证", "纠正措施已实施且有效", "预防措施已实施且有效",
-             "效果验证通过（≥90天）", "相关文件已更新(FMEA/CP/SOP)", "相关人员已完成培训", "经验教训已沉淀"]
-    cl = (r.get("closure") or {}).get("checklist") or [False] * len(items)
-    cl_html = ""
-    for i, it in enumerate(items):
-        ok = cl[i] if i < len(cl) else False
-        mark = '<span class="on">✓</span>' if ok else '<span class="off">✗</span>'
-        cl_html += f'<div class="check">{mark} {esc(it)}</div>'
-    cl_info = r.get("closure") or {}
-
-    return f"""<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CAPA 报告 · {esc(fmt(r.get('capa_id')))}</title>
-<style>{CSS}</style></head>
-<body><div class="wrap">
-<header>
-  <h1>CAPA 纠正预防措施报告</h1>
-  <div class="meta">
-    <span class="badge">编号 {esc(fmt(r.get('capa_id')))}</span>
-    <span class="badge">状态 {esc(fmt(r.get('status')))}</span>
-    <span class="badge">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
-  </div>
-</header>
-
-<section class="sec">
-  <h2>一、基础信息</h2>
-  <p>标题：{esc(fmt(r.get('title')))}</p>
-  <p>来源：{esc(fmt(r.get('source')))} ｜ 等级：{esc(fmt(r.get('level')))}</p>
-  <p>团队：{team_html}</p>
-</section>
-
-<section class="sec">
-  <h2>二、D2 问题描述（5W2H）</h2>
-  <p>{esc(fmt(r.get('problem')))}</p>
-</section>
-
-<section class="sec">
-  <h2>三、D3 临时措施（遏制）</h2>
-  <ul>{items_li(r.get('containment'), ['action','owner','due'])}</ul>
-</section>
-
-<section class="sec">
-  <h2>四、D4 根因分析</h2>
-  <p>方法：{esc(fmt(rc.get('method')))}</p>
-  <p>{esc(fmt(rc.get('content')))}</p>
-  <p>已验证：{'是' if rc.get('verified') else '否（待验证）'}</p>
-</section>
-
-<section class="sec">
-  <h2>五、D5/D6 纠正措施（永久）</h2>
-  <ul>{items_li(r.get('corrective_actions'), ['action','owner','due','verify'])}</ul>
-</section>
-
-<section class="sec">
-  <h2>六、D7 预防措施（横向展开）</h2>
-  <ul>{items_li(r.get('preventive_actions'), ['action','spread','owner','due'])}</ul>
-</section>
-
-<section class="sec">
-  <h2>七、效果验证（30/60/90 天）</h2>
-  <div class="timeline">{ver_html}</div>
-</section>
-
-<section class="sec">
-  <h2>八、D8 关闭检查清单</h2>
-  {cl_html}
-  <p style="margin-top:12px">审批人：{esc(fmt(cl_info.get('approver')))} ｜ 关闭日期：{esc(fmt(cl_info.get('close_date')))}</p>
-</section>
-
-<footer>本报告由 CAPA纠正预防措施管理技能生成 · 具体内容以企业实际评审结论为准</footer>
-</div></body></html>"""
+    L.append("=" * 60)
+    L.append("本报告由 CAPA纠正预防措施技能（成熟度定制）生成，具体内容以企业实际评审结论为准。")
+    return "\n".join(L)
 
 
 # ----------------------------- demo -----------------------------
 def demo_result():
     return {
         "capa_id": "CAPA-2026-001",
-        "title": "XX 产品外观不良率超标",
-        "source": "客诉",
-        "level": "一般",
-        "team": [{"role": "组长", "name": "品质部-张工"}, {"role": "成员", "name": "设备部-王工"}],
-        "problem": "2026-01-12 客户投诉 A123 批次外观不良率 0.8%（标准≤0.2%），涉及 A 线 3 号工位，已发出 200 件。",
-        "containment": [
-            {"action": "隔离问题批次并全检", "owner": "生产部-李工", "due": "2026-01-15"},
-            {"action": "在制品 100% 目视全检后放行", "owner": "品质部-张工", "due": "2026-01-16"}
-        ],
-        "root_cause": {
-            "method": "5Why",
-            "content": "1)为何不良？设备 X 压装偏移→2)为何偏移？校准超期→3)为何超期？PM 计划未纳入该设备→4)为何未纳入？新设备上线未更新点检表→根因：新设备维护保养未纳入体系文件。",
-            "verified": True
-        },
-        "corrective_actions": [
-            {"action": "恢复设备精度并重新校准", "owner": "设备部-王工", "due": "2026-01-25", "verify": "校准合格，连续 30 天 SPC 受控"}
-        ],
-        "preventive_actions": [
-            {"action": "更新 PM 计划与点检表，纳入新设备", "spread": "同类新设备 5 台", "owner": "设备部-王工", "due": "2026-02-10"},
-            {"action": "更新 FMEA 与控制计划监控点", "spread": "A 线全部工位", "owner": "品质部-张工", "due": "2026-02-15"}
-        ],
-        "verification": [
-            {"node": "30天", "date": "2026-02-25", "method": "SPC 监控", "result": "不良率降至 0.1%"},
-            {"node": "60天", "date": "2026-03-25", "method": "趋势分析", "result": "稳定 ≤0.15%"},
-            {"node": "90天", "date": "2026-04-25", "method": "客诉复核", "result": "无新增客诉"}
-        ],
-        "closure": {"checklist": [True, True, True, True, True, True, True],
-                    "approver": "品保经理-杜鼎", "close_date": "2026-04-30"},
-        "status": "已关闭"
+        "title": "铁皮柜运输划伤（客户验货不合格）",
+        "clause": "ISO9001:2015 8.5.1 / 8.7 / 10.2",
+        "maturity_level": "B类（基础规范型）",
+        "nonconformity": (
+            "2026-03-10 客户验货发现 A 型号铁皮柜侧面划伤 12 件，占该批 200 件的 6%，"
+            "位置集中在上沿折弯处，状态为漆面破损见底材。违背标准：成品防护要求（8.5.1）、"
+            "不合格输出控制（8.7）。"
+        ),
+        "correction": (
+            "1) 已隔离该批剩余 188 件，全检挑出带划伤的 12 件单独存放并贴不合格标签；"
+            "2) 12 件经评估后转返工（打磨补漆），返工后复检合格方放行；"
+            "3) 已发运的 2 批同款产品主动通知客户质量接口人，约定到货后重点验看上沿。"
+        ),
+        "root_cause": (
+            "1)为何划伤？上沿折弯处在层叠码放时被上层柜体压磨→2)为何会层叠压磨？周转用珍珠棉仅垫四角，"
+            "上沿无保护→3)为何上沿无保护？包装作业无图示、仅靠老师傅口头交代→4)为何靠口头？"
+            "包装无受控作业指导书→5)为何无文件？新产品上线未同步输出包装 SOP。根因：新产品质量策划"
+            "未覆盖包装防护，包装过程无受控文件与图示。"
+        ),
+        "doc_materials": (
+            "1) 1 页《铁皮柜运输防护临时规定》（受控编号 WI-PKG-023，班组长签字生效），明确层间整张珍珠棉+"
+            "上沿护角；2) 不合格品隔离/返工记录表（12 件处置闭环，含复检合格签认）；3) 客户沟通记录截图；"
+            "4) 纠正措施验证报告（连续 30 天发货划伤 0 例）。以上四项覆盖审核闭环五件套。"
+        ),
+        "field_actions": (
+            "1) 物料备货：采购整张珍珠棉+纸质护角常备于包装工位；2) 现场 1 分钟示范：班组长每天开工前演示"
+            "正确垫放，拍一张合格码放照片发班组群；3) 单点卡点：发货口设 1 张 A4 大字检查卡「上沿护角✓ 层间整棉✓」，"
+            "仓管员发货前打勾。无复杂培训、无新增流程审批。"
+        ),
+        "verification": (
+            "节点一（7天）：抽查 5 车发货码放，护角与整棉 100% 到位；节点二（30天）：监控发货划伤率，"
+            "目标由 6% 降至 0；节点三（90天）：客户验货不合格反馈 0 起。验证方式：发货前拍照抽查 + 客诉台账回溯。"
+        ),
+        "prevention": (
+            "1) 将《铁皮柜运输防护临时规定》转为正式受控文件并纳入新员工上岗必读；2) 新产品质量策划清单"
+            "增加「包装防护」必填项，避免同类遗漏；3) 发货口 A4 检查卡长期保留，月度点检 1 次。"
+        ),
     }
 
 
 def main():
-    ap = argparse.ArgumentParser(description="CAPA / 8D 报告生成器")
+    ap = argparse.ArgumentParser(description="CAPA 纠正措施报告生成器（成熟度定制版）")
     ap.add_argument("--input", help="结构化结果 JSON 路径")
-    ap.add_argument("--md-out", help="输出 MD 路径")
-    ap.add_argument("--html-out", help="输出 HTML 路径")
+    ap.add_argument("--out-dir", default=os.getcwd(), help="输出目录（默认当前工作目录）")
+    ap.add_argument("--format", choices=["txt", "md", "all"], default="all", help="输出格式，默认 all")
     ap.add_argument("--demo", action="store_true", help="用内置小样本生成（便于跑通校验）")
     args = ap.parse_args()
 
@@ -311,16 +189,27 @@ def main():
         sys.stderr.write("请提供 --input 或 --demo。\n")
         sys.exit(1)
 
-    if args.md_out:
-        with open(args.md_out, "w", encoding="utf-8") as f:
+    try:
+        os.makedirs(args.out_dir, exist_ok=True)
+    except Exception as e:
+        sys.stderr.write(f"创建输出目录失败：{e}\n")
+        sys.exit(1)
+
+    capa_id = fmt(r.get("capa_id"), "CAPA")
+    date_str = datetime.now().strftime("%Y%m%d")
+    base = f"CAPA纠正措施报告_{capa_id}_{date_str}"
+
+    if args.format in ("md", "all"):
+        md_path = os.path.join(args.out_dir, base + ".md")
+        with open(md_path, "w", encoding="utf-8") as f:
             f.write(build_md(r))
-        sys.stderr.write(f"MD 已生成：{args.md_out}\n")
-    if args.html_out:
-        with open(args.html_out, "w", encoding="utf-8") as f:
-            f.write(build_html(r))
-        sys.stderr.write(f"HTML 已生成：{args.html_out}\n")
-    if not args.md_out and not args.html_out:
-        sys.stderr.write("未指定 --md-out / --html-out，无输出。\n")
+        sys.stderr.write(f"MD 已生成：{md_path}\n")
+
+    if args.format in ("txt", "all"):
+        txt_path = os.path.join(args.out_dir, base + ".txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(build_txt(r))
+        sys.stderr.write(f"TXT 已生成：{txt_path}\n")
 
 
 if __name__ == "__main__":
